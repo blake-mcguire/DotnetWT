@@ -1,5 +1,6 @@
 using System.Data;
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 using DotnetAPI.Data;
 using DotnetAPI.DTOs;
@@ -8,6 +9,8 @@ using Microsoft.AspNetCore.Cryptography;
 using Microsoft.AspNetCore.Cryptography.KeyDerivation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 
 
 namespace DotnetAPI.Controllers
@@ -117,7 +120,14 @@ namespace DotnetAPI.Controllers
                 }
             }
 
-            return Ok();
+            string userIdSql = "SELECT UserId FROM TutorialAppSchema.Users WHERE Email = '" + userForLogin.Email + "'";
+
+            int userId = _dapper.LoadDataSingle<int>(userIdSql);
+
+            return Ok(new Dictionary<string, string>
+            {
+                { "token", CreateToken(userId) },
+            });
             
         }
 
@@ -132,6 +142,39 @@ namespace DotnetAPI.Controllers
                 iterationCount: 10000000,
                 numBytesRequested: 256 / 8
             );
+
+        }
+
+        //Token Creation Method
+        private string CreateToken(int userId)
+        {
+            Claim[] claims = new Claim[] {
+                new Claim("userId", userId.ToString())
+            };
+
+            SymmetricSecurityKey tokenKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(
+                    _config.GetSection("AppSettings:TokenKey").Value
+                )
+            );
+
+            SigningCredentials credentials = new SigningCredentials(
+                tokenKey, SecurityAlgorithms.HmacSha512Signature
+            );
+
+            SecurityTokenDescriptor descriptor = new SecurityTokenDescriptor()
+            {
+                Subject = new ClaimsIdentity(claims),
+                SigningCredentials = credentials,
+                Expires = DateTime.Now.AddDays(1),
+
+            };
+
+            JwtSecurityTokenHandler tokenhandler = new JwtSecurityTokenHandler();
+
+            SecurityToken token = tokenhandler.CreateToken(descriptor);
+
+            return tokenhandler.WriteToken(token);
 
         }
 
